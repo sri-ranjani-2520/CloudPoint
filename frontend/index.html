@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Submit a campus complaint and track its progress with CloudPoint.">
+  <title>CloudPoint — Campus support</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/config.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="CloudPoint home"><img class="brand-logo" src="/static/logo_CP.jpeg" alt="CloudPoint logo">CloudPoint</a>
+    <nav aria-label="Main navigation">
+      <a href="#submit">Submit a complaint</a>
+      <a href="#track">Track a complaint</a>
+      <a href="/admin.html">Admin</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Submit and Track your complaints</p>
+        <h1 id="page-title">Tell us what needs attention.</h1>
+        <ol class="hero-steps" aria-label="How CloudPoint works">
+          <li><span class="step-number">01</span><span>Describe the issue and submit complaint.</span></li>
+          <li><span class="step-number">02</span><span>Keep the unique reference number.</span></li>
+          <li><span class="step-number">03</span><span>Return any time to check its status.</span></li>
+        </ol>
+        <p>Send a campus complaint to the right team and use its reference number to check progress.</p>
+        <a class="button button-light" href="#submit">Submit a complaint</a>
+      </div>
+    </section>
+
+    <section class="content-grid" aria-label="Complaint services">
+      <article class="panel" id="submit">
+        <div class="section-heading">
+          <div><p class="eyebrow">Student portal</p><h2>Submit Complaint</h2></div>
+        </div>
+        <p class="muted">Please ensure you enter your details correctly. Include enough detail for the campus team to understand the issue.</p>
+        <form id="complaint-form" aria-busy="false">
+          <div class="form-grid">
+            <label>Student name<input name="student_name" autocomplete="name" maxlength="120" aria-describedby="submit-message" required></label>
+            <label>Registration number<input name="registration_number" autocomplete="off" maxlength="64" aria-describedby="submit-message" required></label>
+            <label class="full-width">Complaint title<input name="title" maxlength="160" aria-describedby="submit-message" required></label>
+            <label>Category
+              <select name="category" aria-describedby="submit-message" required>
+                <option value="">Choose a category</option>
+                <option>Hostel</option><option>Academic</option><option>Infrastructure</option>
+                <option>Transport</option><option>Cleanliness</option><option>Other</option>
+              </select>
+            </label>
+            <label>Location<input name="location" maxlength="160" aria-describedby="submit-message" required></label>
+            <label class="full-width">Description<textarea name="description" rows="5" maxlength="5000" aria-describedby="submit-message" required></textarea></label>
+          </div>
+          <button class="button button-primary" type="submit" id="submit-button">Send complaint</button>
+          <p class="form-message" id="submit-message" role="status" aria-live="polite"></p>
+        </form>
+        <div class="confirmation" id="submission-confirmation" hidden>
+          <span class="success-icon" aria-hidden="true">✓</span>
+          <div><h3>Complaint received</h3><p>Save this reference number to track your complaint status later.</p><p class="reference-number" id="new-complaint-id"></p></div>
+          <a class="text-link" id="track-new-complaint" href="#track">Track this complaint</a>
+        </div>
+      </article>
+
+      <article class="panel track-panel" id="track">
+        <div class="section-heading">
+          <div><p class="eyebrow">Track status</p><h2>Track Complaint</h2></div>
+        </div>
+        <p class="muted">Enter the reference number you received after submitting your complaint.</p>
+        <form id="tracking-form" class="tracking-form" aria-busy="false">
+          <label for="tracking-id">Complaint ID</label>
+          <div class="tracking-input"><input id="tracking-id" name="complaint_id" autocomplete="off" placeholder="CP-…" aria-describedby="tracking-message" required><button class="button button-primary" type="submit" id="track-button">Track</button></div>
+          <p class="form-message" id="tracking-message" role="status" aria-live="polite"></p>
+        </form>
+        <section id="tracking-result" class="tracking-result" aria-live="polite" hidden>
+          <div class="result-top"><div><p class="eyebrow">Current status</p><h3 id="result-title"></h3></div><span class="status-pill" id="result-status"></span></div>
+          <dl class="detail-list">
+            <div><dt>Complaint ID</dt><dd id="result-id"></dd></div>
+            <div><dt>Category</dt><dd id="result-category"></dd></div>
+            <div><dt>Location</dt><dd id="result-location"></dd></div>
+            <div><dt>Submitted</dt><dd id="result-created"></dd></div>
+            <div class="detail-description"><dt>Description</dt><dd id="result-description"></dd></div>
+            <div id="rejection-row" hidden><dt>Rejection reason</dt><dd id="result-rejection"></dd></div>
+          </dl>
+        </section>
+      </article>
+    </section>
+  </main>
+  <footer></footer>
+</body>
+</html>

@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CloudPoint local test database
+.test-cloudpoint.sqlite3
+.test-temp/

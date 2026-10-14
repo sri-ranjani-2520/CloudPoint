@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CloudPoint administrator complaint management.">
+  <title>Admin | CloudPoint</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/config.js" defer></script>
+  <script src="/static/admin.js" defer></script>
+</head>
+<body class="admin-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="CloudPoint home"><img class="brand-logo" src="/static/logo_CP.jpeg" alt="CloudPoint logo">CloudPoint</a>
+    <nav aria-label="Main navigation"><a href="/">Student portal</a></nav>
+  </header>
+  <main>
+    <section class="admin-intro">
+      <p class="eyebrow">Campus support</p>
+      <h1>Admin</h1>
+      <p>Review reports, follow their progress, and keep students informed.</p>
+    </section>
+
+    <section class="panel admin-login" id="admin-login-panel" aria-labelledby="login-title">
+      <p class="eyebrow">Restricted access</p>
+      <h2 id="login-title" tabindex="-1">Administrator sign in</h2>
+      <p class="muted">Use your provisioned CloudPoint administrator account.</p>
+      <form id="admin-login-form" method="post" action="/api/admin/login">
+        <div class="form-grid">
+          <label>Username<input name="username" autocomplete="username" maxlength="120" aria-describedby="admin-login-message" required></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" maxlength="1024" aria-describedby="admin-login-message" required></label>
+        </div>
+        <button class="button button-primary" type="submit" id="admin-login-button">Sign in</button>
+        <p class="form-message" id="admin-login-message" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="admin-workspace" id="admin-workspace" hidden aria-labelledby="dashboard-title">
+      <div class="admin-toolbar">
+          <div><p class="eyebrow">Signed in</p><h2 id="dashboard-title" tabindex="-1">Complaint overview</h2></div>
+        <button class="button button-secondary" id="admin-logout-button" type="button">Sign out</button>
+      </div>
+      <p class="form-message" id="admin-workspace-message" role="status" aria-live="polite"></p>
+
+      <section class="stats-grid" aria-label="Complaint statistics" aria-busy="false" id="admin-stats">
+        <article class="stat-card"><span>Total complaints</span><strong id="count-total">—</strong></article>
+        <article class="stat-card"><span>Submitted</span><strong id="count-submitted">—</strong></article>
+        <article class="stat-card"><span>Under review</span><strong id="count-under-review">—</strong></article>
+        <article class="stat-card"><span>In progress</span><strong id="count-in-progress">—</strong></article>
+        <article class="stat-card"><span>Resolved</span><strong id="count-resolved">—</strong></article>
+        <article class="stat-card"><span>Rejected</span><strong id="count-rejected">—</strong></article>
+      </section>
+
+      <section class="panel admin-list-panel" aria-labelledby="complaints-title">
+        <div class="section-heading admin-list-heading">
+          <div><p class="eyebrow">Management</p><h2 id="complaints-title" tabindex="-1">Complaints</h2></div>
+        </div>
+        <form id="complaint-filters" class="admin-filters">
+          <label>Search<input id="complaint-search" name="search" type="search" maxlength="160" placeholder="ID, title, or registration number" aria-describedby="complaint-list-message"></label>
+          <label>Category
+            <select name="category">
+              <option value="">All categories</option><option>Hostel</option><option>Academic</option>
+              <option>Infrastructure</option><option>Transport</option><option>Cleanliness</option><option>Other</option>
+            </select>
+          </label>
+          <label>Status
+            <select name="status">
+              <option value="">All statuses</option><option>Submitted</option><option>Under Review</option>
+              <option>In Progress</option><option>Resolved</option><option>Rejected</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button class="button button-primary" id="filter-submit" type="submit">Apply filters</button>
+            <button class="button button-secondary" id="filter-clear" type="button">Clear</button>
+          </div>
+        </form>
+        <p class="form-message" id="complaint-list-message" role="status" aria-live="polite"></p>
+        <div class="table-scroll" aria-busy="false" id="complaint-list-region">
+          <table class="complaint-table">
+            <caption class="visually-hidden">Complaints matching the current filters</caption>
+            <thead><tr><th scope="col">Complaint ID</th><th scope="col">Complaint title</th><th scope="col">Student registration</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Submitted</th><th scope="col">Last modified</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+            <tbody id="complaint-rows"></tbody>
+          </table>
+        </div>
+        <div class="pagination-controls">
+          <span id="page-label" aria-live="polite">Page 1</span>
+          <div><button class="button button-secondary" id="page-previous" type="button" disabled>Previous</button>
+            <button class="button button-secondary" id="page-next" type="button" disabled>Next</button></div>
+        </div>
+      </section>
+
+      <section class="panel admin-detail-panel" id="complaint-detail" hidden aria-labelledby="detail-heading">
+        <div class="admin-toolbar">
+          <div><p class="eyebrow">Complaint details</p><h2 id="detail-heading" tabindex="-1">Review complaint</h2></div>
+          <button class="button button-secondary" id="detail-close" type="button">Close details</button>
+        </div>
+        <p class="form-message" id="detail-message" role="status" aria-live="polite"></p>
+        <dl class="admin-detail-list">
+          <div><dt>Complaint ID</dt><dd id="detail-id"></dd></div>
+          <div><dt>Student name</dt><dd id="detail-student"></dd></div>
+          <div><dt>Registration number</dt><dd id="detail-registration"></dd></div>
+          <div><dt>Category</dt><dd id="detail-category"></dd></div>
+          <div><dt>Location</dt><dd id="detail-location"></dd></div>
+          <div><dt>Created</dt><dd id="detail-created"></dd></div>
+          <div><dt>Last modified</dt><dd id="detail-modified"></dd></div>
+          <div class="admin-detail-wide"><dt>Title</dt><dd id="detail-title"></dd></div>
+          <div class="admin-detail-wide"><dt>Description</dt><dd id="detail-description"></dd></div>
+          <div class="admin-detail-wide" id="detail-rejection-view" hidden><dt>Current rejection reason</dt><dd id="detail-rejection"></dd></div>
+        </dl>
+        <form id="status-update-form" class="status-update-form">
+          <label>Status
+            <select id="status-select" name="status" aria-describedby="detail-message" required>
+              <option>Submitted</option><option>Under Review</option><option>In Progress</option><option>Resolved</option><option>Rejected</option>
+            </select>
+          </label>
+          <label id="rejection-reason-field" hidden>Rejection reason
+            <textarea id="rejection-reason" name="rejection_reason" rows="3" maxlength="1000" aria-describedby="detail-message"></textarea>
+          </label>
+          <button class="button button-primary" id="status-update-button" type="submit">Save status</button>
+        </form>
+      </section>
+    </section>
+  </main>
+  <footer></footer>
+</body>
+</html>

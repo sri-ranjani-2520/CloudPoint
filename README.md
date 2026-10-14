@@ -871,3 +871,132 @@ The student experience should remain simple: submit a complaint, retain the comp
 The administrator experience should remain organized: review complaints, find relevant records, inspect details, and update statuses with appropriate accountability.
 
 The initial release should implement these requirements reliably before expanding into optional features or additional integrations.
+
+## Implementation Status
+
+This status follows the original CloudPoint roadmap in Sections 1–17. Phase numbers keep their original objectives; implementation details and release gates are recorded separately below.
+
+| Phase | Status | Current evidence and remaining work |
+|---|---|---|
+| 0 — Design decisions and acceptance boundaries | Documented | Initial roles, requirements, acceptance criteria, and exclusions are defined in this README. |
+| 1 — Foundation and AWS environment preparation | Partial | WSGI, configuration, SQLite, DynamoDB/Lambda adapters, and unexecuted AWS templates/scripts are present. AWS service acceptance remains unverified. |
+| 2 — Complaint submission and persistence | Implemented and tested locally | Validation, ID generation, persistence, and submission API pass the isolated Python API/foundation suite (88 Python tests overall). |
+| 3 — Complaint tracking and privacy | Implemented and tested locally | ID tracking returns selected student-facing fields; API privacy and UI rendering checks pass locally. |
+| 4 — Administrator authentication and authorization | Implemented in source | Scrypt credentials, signed/revocable sessions, expiry checks, and server-side authorization are present. Local account/database selection is environment-specific and must be verified. |
+| 5 — Administrator complaint management | Implemented and tested locally | Listing, search, status/category filters, pagination, details, status updates, and rejection handling are covered by local API, DynamoDB-fake, and administrator UI tests. AWS behavior remains unverified. |
+| 6 — Dashboard counts and operational visibility | Partial | Counts, request IDs, safe logs, alarms, and retention settings are implemented locally. AWS metrics, alarm actions, operator access, and cost remain unverified. |
+| 7 — Quality, accessibility, and release readiness | Partial | Current local suites pass (88 Python, 9 administrator UI, 5 student UI checks). Previously documented Chrome evidence predates the latest narrow-screen student-header change; browser recheck, assistive-technology validation, backup/restore, and paired rollback remain open. |
+| 8 — Future enhancements | Not started | No enhancement has been formally selected or approved. |
+
+The local app uses Python's standard library, WSGI, and SQLite. `boto3` is optional for direct DynamoDB use. Admin credentials use salted scrypt hashes and revocable HMAC-signed bearer sessions. The deployment template uses a private S3 origin behind CloudFront HTTPS, API Gateway HTTP API v2, Lambda, DynamoDB, scoped runtime IAM, Secrets Manager, and CloudWatch. Deployment and cleanup scripts are guarded but unexecuted. No AWS resources have been provisioned or modified. Account eligibility, pricing, CloudFormation acceptance, deployed HTTPS behavior, effective IAM, and deployed workflows remain unverified. See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md), [API_CONTRACTS.md](API_CONTRACTS.md), and `infra/cloudpoint.template.json`.
+
+## 18. AWS Free-Tier-Conscious Implementation Plan
+
+### 18.1 Deployment Objective and Cost Boundary
+
+Deploy CloudPoint as a small serverless application without a continuously running server or a managed relational database. Target eligible AWS Free Tier allowances, but treat zero cost as a goal rather than a guarantee. Eligibility, included usage, service pricing, and account terms can change; verify them in the selected account and region before provisioning resources.
+
+The plan below minimizes infrastructure while preserving the required student and administrator workflows. It does not waive security or transport requirements for public deployment.
+
+### 18.2 Initial AWS Service Set
+
+Use these services for the initial deployment:
+
+- **Amazon S3** for static frontend files.
+- **Amazon API Gateway HTTP API** for the application API.
+- **AWS Lambda** for Python backend logic.
+- **Amazon DynamoDB** for complaint records and optional status history.
+- **AWS IAM** for service and deployment permissions.
+- **Amazon CloudWatch** for essential application logs and operational metrics.
+- **AWS Secrets Manager** for the administrator session signing key. This is an explicit security exception to the minimal core set: the key is generated and read at Lambda initialization, rather than passed through CloudFormation into Lambda environment variables. Include its current account and region pricing in the deployment review.
+
+Use one AWS region. Keep Lambda outside a VPC unless a real network requirement arises; DynamoDB access does not require placing Lambda in a VPC. Do not provision EC2, a continuously running server, a managed relational database, or optional notification, search, analytics, and tracing services for the initial release.
+
+### 18.3 Hosting and HTTPS Decision
+
+S3 website endpoints do not provide HTTPS. Public submission and tracking transmit student information, so an HTTP-only public deployment is not acceptable. Before launch, select an HTTPS-capable hosting configuration and verify the complete browser-to-API path uses HTTPS.
+
+The simplest S3 static website endpoint may be used only for local or controlled demonstrations where no real student information is entered and the HTTP limitation is explicitly disclosed. For a public demonstration or real use, the hosting design must add an HTTPS-capable front door (commonly CloudFront in front of a private S3 origin), or choose another suitable HTTPS-capable host. This is a justified exception to the minimal service list, not an optional enhancement. A custom domain and Route 53 are not required; the hosting provider's HTTPS endpoint can be used where available.
+
+Keep S3 permissions limited to the chosen hosting configuration. Do not make the bucket broadly writable or expose stored deployment artifacts. Configure the frontend API base URL per environment and configure API CORS to the actual frontend origin; CORS is a browser control, not an authorization mechanism.
+
+### 18.4 DynamoDB Data and Query Strategy
+
+Design the table and indexes from the required access patterns before creating them. Complaint ID should support direct retrieval for student tracking and administrator detail lookup. Use backend-generated, sufficiently unpredictable identifiers; enforce uniqueness with a conditional write so a collision cannot overwrite an existing complaint.
+
+The initial administrator interface needs listing, category/status filtering, ID search, title search, registration-number search, and dashboard counts. DynamoDB efficiently supports key-based queries, not arbitrary partial-text search across fields. Before implementation, specify whether title and registration-number search means exact, prefix, or limited partial matching. If the initial data volume is small, a paginated scan with server-side filtering may be acceptable for a prototype, but it reads records that do not match and can become slow or costly. Document a dataset/request threshold for that approach and revisit the index or storage design before it is exceeded. Do not claim scalable partial search without an index or search service that supports it.
+
+Use pagination for complaint listings and scans; never assume a single DynamoDB response contains every matching record. Apply search and category/status filters consistently across pages. Dashboard counts may use a full paginated scan for a small dataset, with its read cost and latency documented. If counts must remain efficient at larger volume, introduce a carefully maintained aggregate or a queryable status index and define its consistency behavior; do not silently present stale or incomplete counts as exact. No separate analytics store is needed.
+
+Store current complaint state and timestamps together so status changes are atomic. If status history is included, key it so history is queryable by complaint ID; append the history entry and update current state atomically where practical. History is a future enhancement in the existing scope, so it is optional for the first release unless auditability is made a requirement.
+
+### 18.5 Authentication, Authorization, and Tracking Privacy
+
+Choose administrator authentication before deployment. Do not store plaintext passwords, put credentials in frontend files, or authorize based on a role/administrator ID supplied by the browser. Every administrative API operation must verify a signed, unexpired authentication credential and the administrator's authorization on the server side. Login must resist brute-force attempts through suitable throttling and generic failure messages; logout must invalidate the session or credential according to the selected design.
+
+A small prototype may use a well-supported password-hashing library and signed sessions/tokens, provided secrets are kept out of source control and frontend assets, token lifetime and revocation behavior are documented, and the prototype's operational limitations are stated. The deployment template stores the signing key in Secrets Manager and grants Lambda `GetSecretValue` only on that secret. A managed identity provider is an alternative, but verify current account eligibility, pricing, and integration requirements first. Do not improvise cryptography or build a custom password protocol.
+
+Complaint-ID-only tracking makes the ID a bearer secret: anyone who obtains it can access whatever the endpoint returns. Return only the student-facing fields, avoid logging IDs and personal details, and decide whether an additional verification factor is required before showing names, registration numbers, or full descriptions. Use unpredictable IDs, rate limits, and throttling, while recognizing these do not replace an access policy. Separate public student routes from protected administrator routes.
+
+### 18.6 Cost and Operational Controls
+
+Before creating resources:
+
+1. Verify active account eligibility, current free-tier allowances, and regional pricing.
+2. Set a budget or billing alert where the account supports it; alerts do not cap spending.
+3. Estimate request volume, Lambda duration, DynamoDB reads/writes, storage, logs, and data transfer.
+4. Use small test datasets and validate query patterns before deployment.
+5. Set short, suitable CloudWatch log retention and avoid logging credentials, tokens, complaint text, or unnecessary personal data.
+6. Monitor API requests, Lambda errors/duration/throttles, DynamoDB consumption, storage, and transfer.
+7. Avoid repeated polling, unbounded scans, and unnecessary retries; make write retries safe where possible.
+8. Review billing after testing and remove unused resources.
+
+Free-tier allowances do not ensure that every configuration is free. HTTPS hosting, data transfer, logging, request volume, and account eligibility can affect cost. Recheck pricing at deployment time rather than relying on historical limits.
+
+### 18.7 Implementation Phases and Exit Criteria
+
+This section uses the original roadmap objectives; it is not a separate phase sequence.
+
+#### Phase 0 — Design decisions and acceptance boundaries
+
+Confirm scope, design decisions, acceptance boundaries, and exclusions before implementation.
+
+#### Phase 1 — Foundation and AWS environment preparation
+
+Establish application configuration, the repository/database foundation, and deployment prerequisites. Prepare infrastructure definitions without treating them as deployed or service-validated.
+
+#### Phase 2 — Complaint submission and persistence
+
+Implement validation, unique complaint IDs, persistence, and submission endpoints. Accept only after the isolated local submission/persistence workflow passes.
+
+#### Phase 3 — Complaint tracking and privacy
+
+Implement tracking by complaint ID and enforce the intended privacy boundary for student responses.
+
+#### Phase 4 — Administrator authentication and authorization
+
+Implement administrator login/logout, session handling, and protection of every administrator endpoint.
+
+#### Phase 5 — Administrator complaint management
+
+Implement listing, search, filtering, pagination, details, status updates, rejection reasons, and the required administrator workflows.
+
+#### Phase 6 — Dashboard counts and operational visibility
+
+Implement dashboard counts, consistent counting methods, request correlation IDs, safe structured logs, CloudWatch alarms, retention considerations, and operational investigation support.
+
+#### Phase 7 — Quality, accessibility, and release readiness
+
+Evaluate end-to-end behavior, regression coverage, responsive layouts, accessibility, operational limitations, backup/recovery, rollback, and release readiness. Local checks do not establish AWS service acceptance or deployed behavior.
+
+#### Phase 8 — Future enhancements
+
+Evaluate future enhancements only after the original workflows are stable. No candidate enhancement is selected or approved by this document.
+
+### 18.8 Explicitly Deferred Infrastructure
+
+Defer custom domains and Route 53, WAF, VPC/NAT, multiple environments, dedicated search, separate analytics databases, relational databases, notifications, file uploads, multi-region replication, elaborate CI/CD, advanced dashboards, distributed tracing, and advanced disaster recovery unless a specific requirement justifies them. CloudFront is also deferred by default only for non-public/controlled demonstrations; use an HTTPS-capable front door for public use as described in Section 18.3.
+
+### 18.9 Deployment Definition of Done
+
+The initial AWS deployment is complete when the frontend loads through the appropriate hosting configuration; students can submit and track current status; complaints persist in DynamoDB; administrators authenticate and can list, search, filter, inspect, and update records; rejection reasons and timestamps are correct; counts follow documented rules; unauthorized admin requests fail; no continuously running server is required; essential end-to-end scenarios pass; account eligibility and cost have been reviewed; and deployment, configuration, testing, and cleanup are documented.

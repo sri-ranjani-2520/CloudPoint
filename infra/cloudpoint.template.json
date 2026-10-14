@@ -1,0 +1,520 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CloudPoint serverless application. Deploys one API, Lambda, DynamoDB table, private static bucket, HTTPS CloudFront distribution, least-privilege IAM, and retained application data.",
+  "Parameters": {
+    "LambdaCodeBucket": {
+      "Type": "String",
+      "Description": "Name of an existing private, encrypted S3 bucket used only to stage the Lambda ZIP package."
+    },
+    "LambdaCodeKey": {
+      "Type": "String",
+      "Description": "Object key of the versioned Lambda ZIP package in LambdaCodeBucket."
+    },
+    "SessionSecretRevision": {
+      "Type": "String",
+      "Default": "1",
+      "AllowedPattern": "^[A-Za-z0-9._-]{1,64}$",
+      "Description": "Non-secret revision that changes Lambda configuration after secret rotation; it does not guarantee immediate retirement of every execution environment."
+    }
+  },
+  "Resources": {
+    "ComplaintsTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          { "AttributeName": "complaint_id", "AttributeType": "S" }
+        ],
+        "KeySchema": [
+          { "AttributeName": "complaint_id", "KeyType": "HASH" }
+        ],
+        "TimeToLiveSpecification": {
+          "AttributeName": "expires_at",
+          "Enabled": true
+        },
+        "Tags": [
+          { "Key": "Project", "Value": "CloudPoint" },
+          { "Key": "DataClass", "Value": "StudentComplaints" }
+        ]
+      }
+    },
+    "SessionSigningSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "Name": { "Fn::Sub": "cloudpoint/${AWS::StackName}/session-signing-key" },
+        "Description": { "Fn::Sub": "CloudPoint administrator session signing key for ${AWS::StackName}." },
+        "GenerateSecretString": {
+          "PasswordLength": 64,
+          "ExcludePunctuation": true,
+          "IncludeSpace": false
+        },
+        "Tags": [
+          { "Key": "CloudPointProject", "Value": "CloudPoint" },
+          { "Key": "CloudPointPurpose", "Value": "AdminSessionSigningKey" },
+          { "Key": "CloudPointOwnerAccount", "Value": { "Ref": "AWS::AccountId" } }
+        ]
+      }
+    },
+    "LambdaLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": { "Fn::Sub": "/aws/lambda/${AWS::StackName}-api" },
+        "RetentionInDays": 14,
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "LambdaErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "CloudPoint Lambda reported one or more unhandled errors in a five-minute period.",
+        "AlarmName": { "Fn::Sub": "${AWS::StackName}-lambda-errors" },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [ { "Name": "FunctionName", "Value": { "Fn::Sub": "${AWS::StackName}-api" } } ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "LambdaThrottlesAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "CloudPoint Lambda reported one or more throttled invocations in a five-minute period.",
+        "AlarmName": { "Fn::Sub": "${AWS::StackName}-lambda-throttles" },
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Throttles",
+        "Dimensions": [ { "Name": "FunctionName", "Value": { "Fn::Sub": "${AWS::StackName}-api" } } ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "HttpApiServerErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "CloudPoint HTTP API reported one or more server errors in a five-minute period.",
+        "AlarmName": { "Fn::Sub": "${AWS::StackName}-api-5xx" },
+        "Namespace": "AWS/ApiGateway",
+        "MetricName": "5xx",
+        "Dimensions": [
+          { "Name": "ApiId", "Value": { "Ref": "HttpApi" } },
+          { "Name": "Stage", "Value": "$default" }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "DatapointsToAlarm": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "lambda.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CloudPointRuntimeAccess",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ComplaintAndSessionTableOperations",
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:Scan"
+                  ],
+                  "Resource": { "Fn::GetAtt": [ "ComplaintsTable", "Arn" ] }
+                },
+                {
+                  "Sid": "WriteApplicationLogs",
+                  "Effect": "Allow",
+                  "Action": [ "logs:CreateLogStream", "logs:PutLogEvents" ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-api:*"
+                  }
+                },
+                {
+                  "Sid": "ReadOnlySessionSigningSecret",
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:GetSecretValue",
+                  "Resource": { "Ref": "SessionSigningSecret" }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "ApiFunction": {
+      "Type": "AWS::Lambda::Function",
+      "DependsOn": [ "LambdaLogGroup" ],
+      "Properties": {
+        "FunctionName": { "Fn::Sub": "${AWS::StackName}-api" },
+        "Description": "CloudPoint API Gateway HTTP API v2 handler.",
+        "Runtime": "python3.14",
+        "Handler": "cloudpoint.lambda_adapter.lambda_handler",
+        "Architectures": [ "arm64" ],
+        "MemorySize": 256,
+        "Timeout": 15,
+        "Role": { "Fn::GetAtt": [ "LambdaExecutionRole", "Arn" ] },
+        "LoggingConfig": {
+          "LogFormat": "JSON",
+          "ApplicationLogLevel": "INFO",
+          "SystemLogLevel": "INFO",
+          "LogGroup": { "Fn::Sub": "/aws/lambda/${AWS::StackName}-api" }
+        },
+        "Code": {
+          "S3Bucket": { "Ref": "LambdaCodeBucket" },
+          "S3Key": { "Ref": "LambdaCodeKey" }
+        },
+        "Environment": {
+          "Variables": {
+            "CLOUDPOINT_DYNAMODB_TABLE": { "Ref": "ComplaintsTable" },
+            "CLOUDPOINT_AWS_REGION": { "Ref": "AWS::Region" },
+            "CLOUDPOINT_SESSION_SECRET_ARN": { "Ref": "SessionSigningSecret" },
+            "CLOUDPOINT_SESSION_SECRET_REVISION": { "Ref": "SessionSecretRevision" }
+          }
+        },
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "HttpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": { "Fn::Sub": "${AWS::StackName}-http-api" },
+        "ProtocolType": "HTTP",
+        "Description": "CloudPoint API. Browser traffic is same-origin through CloudFront; API Gateway CORS is intentionally disabled.",
+        "Tags": { "Project": "CloudPoint" }
+      }
+    },
+    "ApiLambdaIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": { "Ref": "HttpApi" },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationMethod": "POST",
+        "IntegrationUri": { "Fn::GetAtt": [ "ApiFunction", "Arn" ] },
+        "PayloadFormatVersion": "2.0",
+        "TimeoutInMillis": 29000
+      }
+    },
+    "ApiCatchAllRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": { "Ref": "HttpApi" },
+        "RouteKey": "ANY /{proxy+}",
+        "Target": { "Fn::Join": [ "/", [ "integrations", { "Ref": "ApiLambdaIntegration" } ] ] }
+      }
+    },
+    "ApiRootRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": { "Ref": "HttpApi" },
+        "RouteKey": "ANY /",
+        "Target": { "Fn::Join": [ "/", [ "integrations", { "Ref": "ApiLambdaIntegration" } ] ] }
+      }
+    },
+    "AdminLoginRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": { "Ref": "HttpApi" },
+        "RouteKey": "POST /api/admin/login",
+        "Target": { "Fn::Join": [ "/", [ "integrations", { "Ref": "ApiLambdaIntegration" } ] ] }
+      }
+    },
+    "HttpApiStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": { "Ref": "HttpApi" },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "DefaultRouteSettings": {
+          "ThrottlingBurstLimit": 40,
+          "ThrottlingRateLimit": 20
+        },
+        "RouteSettings": {
+          "POST /api/admin/login": {
+            "ThrottlingBurstLimit": 3,
+            "ThrottlingRateLimit": 1
+          }
+        },
+        "Tags": { "Project": "CloudPoint" }
+      }
+    },
+    "ApiInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": { "Ref": "ApiFunction" },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/$default/*/*"
+        }
+      }
+    },
+    "FrontendBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            { "ServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }
+          ]
+        },
+        "Tags": [
+          { "Key": "Project", "Value": "CloudPoint" },
+          { "Key": "CloudPointProject", "Value": "CloudPoint" },
+          { "Key": "CloudPointPurpose", "Value": "FrontendHosting" },
+          { "Key": "CloudPointOwnerAccount", "Value": { "Ref": "AWS::AccountId" } }
+        ]
+      }
+    },
+    "FrontendOriginAccessControl": {
+      "Type": "AWS::CloudFront::OriginAccessControl",
+      "Properties": {
+        "OriginAccessControlConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-private-s3-origin" },
+          "OriginAccessControlOriginType": "s3",
+          "SigningBehavior": "always",
+          "SigningProtocol": "sigv4"
+        }
+      }
+    },
+    "ApiCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-api-no-cache" },
+          "Comment": "Never cache complaint or administrator API responses.",
+          "DefaultTTL": 0,
+          "MaxTTL": 0,
+          "MinTTL": 0,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": false,
+            "EnableAcceptEncodingBrotli": false,
+            "HeadersConfig": { "HeaderBehavior": "none" },
+            "CookiesConfig": { "CookieBehavior": "none" },
+            "QueryStringsConfig": { "QueryStringBehavior": "none" }
+          }
+        }
+      }
+    },
+    "ApiOriginRequestPolicy": {
+      "Type": "AWS::CloudFront::OriginRequestPolicy",
+      "Properties": {
+        "OriginRequestPolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-api-origin-requests" },
+          "Comment": "Forward only CloudPoint API auth/content headers and query strings.",
+          "HeadersConfig": {
+            "HeaderBehavior": "whitelist",
+            "Headers": { "Items": [ "Authorization", "Content-Type" ] }
+          },
+          "CookiesConfig": { "CookieBehavior": "none" },
+          "QueryStringsConfig": { "QueryStringBehavior": "all" }
+        }
+      }
+    },
+    "FrontendSecurityHeadersPolicy": {
+      "Type": "AWS::CloudFront::ResponseHeadersPolicy",
+      "Properties": {
+        "ResponseHeadersPolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-security-headers" },
+          "Comment": "HTTPS-only frontend security headers for CloudPoint.",
+          "SecurityHeadersConfig": {
+            "ContentTypeOptions": { "Override": true },
+            "FrameOptions": { "FrameOption": "DENY", "Override": true },
+            "ReferrerPolicy": { "ReferrerPolicy": "same-origin", "Override": true },
+            "StrictTransportSecurity": {
+              "AccessControlMaxAgeSec": 63072000,
+              "IncludeSubdomains": true,
+              "Preload": false,
+              "Override": true
+            },
+            "ContentSecurityPolicy": {
+              "ContentSecurityPolicy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'",
+              "Override": true
+            }
+          }
+        }
+      }
+    },
+    "FrontendDistribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": {
+        "DistributionConfig": {
+          "Enabled": true,
+          "Comment": { "Fn::Sub": "${AWS::StackName} HTTPS frontend and same-origin API" },
+          "DefaultRootObject": "index.html",
+          "HttpVersion": "http2and3",
+          "PriceClass": "PriceClass_100",
+          "Origins": [
+            {
+              "Id": "PrivateFrontendS3",
+              "DomainName": { "Fn::GetAtt": [ "FrontendBucket", "RegionalDomainName" ] },
+              "OriginAccessControlId": { "Ref": "FrontendOriginAccessControl" },
+              "S3OriginConfig": { "OriginAccessIdentity": "" }
+            },
+            {
+              "Id": "ApiGatewayHttpApi",
+              "DomainName": { "Fn::Sub": "${HttpApi}.execute-api.${AWS::Region}.amazonaws.com" },
+              "CustomOriginConfig": {
+                "OriginProtocolPolicy": "https-only",
+                "OriginSSLProtocols": [ "TLSv1.2" ],
+                "OriginReadTimeout": 30,
+                "OriginKeepaliveTimeout": 5
+              }
+            }
+          ],
+          "DefaultCacheBehavior": {
+            "TargetOriginId": "PrivateFrontendS3",
+            "ViewerProtocolPolicy": "redirect-to-https",
+            "AllowedMethods": [ "GET", "HEAD" ],
+            "CachedMethods": [ "GET", "HEAD" ],
+            "Compress": true,
+            "CachePolicyId": { "Ref": "StaticCachePolicy" },
+            "ResponseHeadersPolicyId": { "Ref": "FrontendSecurityHeadersPolicy" }
+          },
+          "CacheBehaviors": [
+            {
+              "PathPattern": "/api/*",
+              "TargetOriginId": "ApiGatewayHttpApi",
+              "ViewerProtocolPolicy": "redirect-to-https",
+              "AllowedMethods": [ "GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE" ],
+              "CachedMethods": [ "GET", "HEAD", "OPTIONS" ],
+              "Compress": true,
+              "CachePolicyId": { "Ref": "ApiCachePolicy" },
+              "OriginRequestPolicyId": { "Ref": "ApiOriginRequestPolicy" },
+              "ResponseHeadersPolicyId": { "Ref": "FrontendSecurityHeadersPolicy" }
+            },
+            {
+              "PathPattern": "/health*",
+              "TargetOriginId": "ApiGatewayHttpApi",
+              "ViewerProtocolPolicy": "redirect-to-https",
+              "AllowedMethods": [ "GET", "HEAD", "OPTIONS" ],
+              "CachedMethods": [ "GET", "HEAD", "OPTIONS" ],
+              "Compress": true,
+              "CachePolicyId": { "Ref": "ApiCachePolicy" },
+              "OriginRequestPolicyId": { "Ref": "ApiOriginRequestPolicy" },
+              "ResponseHeadersPolicyId": { "Ref": "FrontendSecurityHeadersPolicy" }
+            }
+          ],
+          "ViewerCertificate": { "CloudFrontDefaultCertificate": true },
+          "Restrictions": {
+            "GeoRestriction": { "RestrictionType": "none" }
+          }
+        },
+        "Tags": [ { "Key": "Project", "Value": "CloudPoint" } ]
+      }
+    },
+    "FrontendBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": { "Ref": "FrontendBucket" },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowReadOnlyFromThisCloudFrontDistribution",
+              "Effect": "Allow",
+              "Principal": { "Service": "cloudfront.amazonaws.com" },
+              "Action": "s3:GetObject",
+              "Resource": { "Fn::Sub": "${FrontendBucket.Arn}/*" },
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": { "Fn::Sub": "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}" }
+                }
+              }
+            },
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                { "Fn::GetAtt": [ "FrontendBucket", "Arn" ] },
+                { "Fn::Sub": "${FrontendBucket.Arn}/*" }
+              ],
+              "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+            }
+          ]
+        }
+      }
+    },
+    "StaticCachePolicy": {
+      "Type": "AWS::CloudFront::CachePolicy",
+      "Properties": {
+        "CachePolicyConfig": {
+          "Name": { "Fn::Sub": "${AWS::StackName}-static-cache" },
+          "Comment": "Cache only static frontend resources; releases invalidate the distribution.",
+          "DefaultTTL": 3600,
+          "MaxTTL": 86400,
+          "MinTTL": 0,
+          "ParametersInCacheKeyAndForwardedToOrigin": {
+            "EnableAcceptEncodingGzip": true,
+            "EnableAcceptEncodingBrotli": true,
+            "HeadersConfig": { "HeaderBehavior": "none" },
+            "CookiesConfig": { "CookieBehavior": "none" },
+            "QueryStringsConfig": { "QueryStringBehavior": "none" }
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "FrontendUrl": {
+      "Description": "HTTPS application URL. Browser API calls use the same origin via CloudFront path routing.",
+      "Value": { "Fn::Sub": "https://${FrontendDistribution.DomainName}" }
+    },
+    "FrontendBucketName": {
+      "Description": "Private S3 bucket containing static frontend assets.",
+      "Value": { "Ref": "FrontendBucket" }
+    },
+    "CloudFrontDistributionId": {
+      "Description": "Distribution ID for release invalidations.",
+      "Value": { "Ref": "FrontendDistribution" }
+    },
+    "HttpApiUrl": {
+      "Description": "Direct API Gateway HTTPS URL for controlled backend diagnostics; browser clients should use the CloudFront same-origin URL.",
+      "Value": { "Fn::Sub": "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com" }
+    },
+    "DynamoDBTableName": {
+      "Description": "Application table. CloudFormation retains this table and its data when the stack is deleted.",
+      "Value": { "Ref": "ComplaintsTable" }
+    }
+  }
+}
