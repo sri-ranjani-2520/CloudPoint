@@ -50,6 +50,16 @@ if ($null -eq $existingStack -and $UpdateExisting) {
 }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $templatePath = Join-Path $projectRoot 'infra/cloudpoint.template.json'
+if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
+    throw 'The CloudFormation template is missing. Deployment was refused.'
+}
+$templateUri = "file://$templatePath"
+# Validate the template with AWS before uploading a Lambda artifact or changing the stack.
+# This is a validation API call; it does not create or update AWS resources.
+$validationOutput = & aws cloudformation validate-template --template-body $templateUri --region $Region --output json 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw ("AWS CloudFormation template validation failed. No Lambda artifact was uploaded and no stack changes were requested. Details: {0}" -f ($validationOutput -join "`n"))
+}
 $lambdaSource = Join-Path $projectRoot 'cloudpoint'
 $frontendSource = Join-Path $projectRoot 'frontend'
 $frontendKeys = @(Get-ChildItem -LiteralPath $frontendSource -File -Recurse | ForEach-Object {
@@ -118,7 +128,6 @@ try {
         "Key=CloudPointOwnerAccount,Value=$ExpectedAccountId",
         'Key=CloudPointPurpose,Value=ServerlessApplication'
     )
-    $templateUri = "file://$templatePath"
     if ($null -eq $existingStack) {
         & aws cloudformation create-stack --stack-name $StackName --region $Region --template-body $templateUri --parameters "ParameterKey=LambdaCodeBucket,ParameterValue=$ArtifactBucketName" "ParameterKey=LambdaCodeKey,ParameterValue=$objectKey" "ParameterKey=SessionSecretRevision,ParameterValue=$SessionSecretRevision" --tags $tags --capabilities CAPABILITY_IAM
         if ($LASTEXITCODE -ne 0) { throw 'CloudFormation did not accept the new stack creation.' }
@@ -150,6 +159,13 @@ try {
             '.html' { 'text/html; charset=utf-8' }
             '.js' { 'text/javascript; charset=utf-8' }
             '.css' { 'text/css; charset=utf-8' }
+            '.json' { 'application/json; charset=utf-8' }
+            '.jpeg' { 'image/jpeg' }
+            '.jpg' { 'image/jpeg' }
+            '.png' { 'image/png' }
+            '.webp' { 'image/webp' }
+            '.svg' { 'image/svg+xml' }
+            '.ico' { 'image/x-icon' }
             default { 'application/octet-stream' }
         }
         & aws s3api put-object --bucket $outputMap.FrontendBucketName --key $key --body $_.FullName --content-type $contentType --expected-bucket-owner $ExpectedAccountId --region $Region --output json

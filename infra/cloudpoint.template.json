@@ -342,7 +342,7 @@
           "Comment": "Forward only CloudPoint API auth/content headers and query strings.",
           "HeadersConfig": {
             "HeaderBehavior": "whitelist",
-            "Headers": { "Items": [ "Authorization", "Content-Type" ] }
+            "Headers": [ "Authorization", "Content-Type" ]
           },
           "CookiesConfig": { "CookieBehavior": "none" },
           "QueryStringsConfig": { "QueryStringBehavior": "all" }

@@ -64,6 +64,14 @@ class InfrastructureDefinitionTests(unittest.TestCase):
         self.assertEqual(table["Properties"]["KeySchema"], [{"AttributeName": "complaint_id", "KeyType": "HASH"}])
         self.assertEqual(table["Properties"]["TimeToLiveSpecification"]["AttributeName"], "expires_at")
 
+    def test_api_origin_request_policy_uses_supported_header_list_shape(self):
+        policy = self.resources["ApiOriginRequestPolicy"]["Properties"]["OriginRequestPolicyConfig"]
+        headers = policy["HeadersConfig"]
+        self.assertEqual(headers["HeaderBehavior"], "whitelist")
+        self.assertEqual(headers["Headers"], ["Authorization", "Content-Type"])
+        self.assertEqual(policy["CookiesConfig"]["CookieBehavior"], "none")
+        self.assertEqual(policy["QueryStringsConfig"]["QueryStringBehavior"], "all")
+
     def test_frontend_bucket_private_owned_and_cloudfront_api_uncached_https(self):
         bucket = self.resources["FrontendBucket"]["Properties"]
         self.assertTrue(all(bucket["PublicAccessBlockConfiguration"].values()))
@@ -232,6 +240,17 @@ class InfrastructureDefinitionTests(unittest.TestCase):
             if "& aws " in line and "@arguments" not in line:
                 self.assertIn("--region $Region", line, line)
 
+    def test_aws_template_validation_precedes_artifact_upload_and_stack_changes(self):
+        validation = self.deploy.index('aws cloudformation validate-template')
+        upload = self.deploy.index('aws s3api put-object')
+        create = self.deploy.index('aws cloudformation create-stack')
+        update = self.deploy.index('aws cloudformation update-stack')
+        self.assertLess(validation, upload)
+        self.assertLess(validation, create)
+        self.assertLess(validation, update)
+        self.assertIn('No Lambda artifact was uploaded and no stack changes were requested', self.deploy)
+        self.assertIn('if (-not $Execute)', self.deploy)
+
     def test_existing_stack_update_requires_opt_in_and_ownership_verification(self):
         self.assertIn("[switch] $UpdateExisting", self.deploy)
         self.assertIn("$null -ne $existingStack -and -not $UpdateExisting", self.deploy)
@@ -271,6 +290,19 @@ class InfrastructureDefinitionTests(unittest.TestCase):
         self.assertLess(self.cleanup.index("Assert-AwsIdentity"), self.cleanup.index("aws s3api delete-object"))
         self.assertLess(self.cleanup.index("-ApproveDestructive", self.cleanup.index("param(")), self.cleanup.index("aws cloudformation delete-stack"))
         self.assertIn("$frontendSource", self.cleanup)
+
+    def test_frontend_deployment_assigns_image_content_types(self):
+        # CloudPoint's logo is a JPEG. Preserve its media type instead of
+        # publishing it as application/octet-stream in the S3 object metadata.
+        for extension, media_type in (
+            ("'.jpeg'", "'image/jpeg'"),
+            ("'.jpg'", "'image/jpeg'"),
+            ("'.png'", "'image/png'"),
+            ("'.webp'", "'image/webp'"),
+            ("'.svg'", "'image/svg+xml'"),
+        ):
+            with self.subTest(extension=extension):
+                self.assertRegex(self.deploy, re.escape(extension) + r"\s+\{\s*" + re.escape(media_type))
 
     def test_deployment_blocks_stale_assets_without_automatic_deletion(self):
         self.assertIn("Get-S3ObjectInventory", self.deploy)
