@@ -145,8 +145,26 @@ try {
             throw 'CloudFormation did not accept the explicitly authorized stack update.'
         }
     }
-    if (-not $stackWaitSucceeded) { throw 'CloudFormation did not reach a complete stack state.' }
-
+    if (-not $stackWaitSucceeded) {
+        Write-Warning 'CloudFormation did not reach a complete stack state.'
+        $status = & aws cloudformation describe-stacks --stack-name $StackName --region $Region `
+            --query 'Stacks[0].StackStatus' --output text 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Warning "Observed stack status: $($status -join ' ')"
+        } else {
+            Write-Warning 'Could not retrieve the final stack status.'
+        }
+        $events = & aws cloudformation describe-stack-events --stack-name $StackName --region $Region --max-items 20 `
+            --query 'StackEvents[].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' `
+            --output table 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $events | Write-Host
+        } else {
+            Write-Warning 'Could not retrieve CloudFormation events.'
+        }
+        Write-Warning "The Lambda artifact may remain at s3://$ArtifactBucketName/$objectKey. Do not delete it until you verify it is unused."
+        throw 'Deployment failed. Review the stack status and events before recovery.'
+    }
     $stack = Get-CloudPointStack -StackName $StackName -ExpectedAccountId $ExpectedAccountId -Region $Region
     if ($null -eq $stack) { throw 'CloudPoint stack could not be verified after deployment.' }
     $outputMap = @{}
