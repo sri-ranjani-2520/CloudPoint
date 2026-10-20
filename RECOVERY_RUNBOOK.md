@@ -36,3 +36,14 @@
 ## After an approved deployment
 
 Verify HTTPS frontend delivery and same-origin API routing; student submission and tracking; administrator login/logout, authorization, search/filter/pagination, dashboard counts, status updates and rejection reasons; CloudWatch logs/alarms; and effective IAM permissions. Use test-only records. Configure and test backups and restoration separately; DynamoDB retention is not a backup.
+
+## Failed initial CloudFormation creation
+
+If initial stack creation ends in `ROLLBACK_COMPLETE`, do not rerun deployment
+or use the normal cleanup script. The standard safety helper intentionally
+rejects this state. First inspect the CloudFormation stack events and identify
+the root cause. Any deletion or recovery must be reviewed against the expected
+AWS account, region, stack ownership tags, and retained DynamoDB data. Do not
+delete the retained complaint table or the separate artifact bucket as part
+of routine stack recovery. No recovery action should be taken until the
+account and potential charges have been checked.
