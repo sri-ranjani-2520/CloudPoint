@@ -68,20 +68,59 @@ $frontendKeys = @(Get-ChildItem -LiteralPath $frontendSource -File -Recurse | Fo
 if ($frontendKeys.Count -eq 0) { throw 'The frontend manifest is empty; deployment was refused.' }
 $createFrontendFetcher = {
     param([string] $Bucket)
+
     $frontendBucketForListing = $Bucket
+    $accountIdForListing = $ExpectedAccountId
+    $regionForListing = $Region
+
     return {
         param($ContinuationToken)
-        $arguments = @('s3api', 'list-objects-v2', '--bucket', $frontendBucketForListing, '--expected-bucket-owner', $ExpectedAccountId, '--region', $Region, '--max-keys', '1000', '--no-paginate', '--output', 'json')
-        if ($null -ne $ContinuationToken) { $arguments += @('--continuation-token', $ContinuationToken) }
-        $response = & aws @arguments 2>$null
-        if ($LASTEXITCODE -ne 0) { throw 'S3 object listing failed.' }
+
+        $arguments = @(
+            's3api',
+            'list-objects-v2',
+            '--bucket', $frontendBucketForListing,
+            '--expected-bucket-owner', $accountIdForListing,
+            '--region', $regionForListing,
+            '--max-keys', '1000',
+            '--no-paginate',
+            '--output', 'json'
+        )
+
+        if ($null -ne $ContinuationToken) {
+            $arguments += @('--continuation-token', $ContinuationToken)
+        }
+
+        $response = & aws @arguments
+
+        if ($LASTEXITCODE -ne 0) {
+            throw 'S3 object listing failed.'
+        }
+
         return ($response -join "`n")
     }.GetNewClosure()
 }.GetNewClosure()
 $assertFrontendManifest = {
     param([string] $Bucket)
     $fetcher = & $createFrontendFetcher $Bucket
-    $inventory = Get-S3ObjectInventory -FetchPage $fetcher
+    $items = @()
+    $continuationToken = $null
+
+    do {
+        $response = & $fetcher $continuationToken
+        $page = $response | ConvertFrom-Json
+
+        if ($null -ne $page.Contents) {
+            $items += @($page.Contents)
+        }
+
+        $continuationToken = $page.NextContinuationToken
+    } while ($page.IsTruncated -eq $true)
+
+    $inventory = [PSCustomObject]@{
+        Items = $items
+    }
+
     $manifest = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
     foreach ($key in $frontendKeys) { $null = $manifest.Add($key) }
     $unexpected = @($inventory.Items | Where-Object { -not $manifest.Contains([string]$_.Key) })
@@ -134,14 +173,42 @@ try {
         & aws cloudformation wait stack-create-complete --stack-name $StackName --region $Region
         $stackWaitSucceeded = $LASTEXITCODE -eq 0
     } else {
-        $updateOutput = & aws cloudformation update-stack --stack-name $StackName --region $Region --template-body $templateUri --parameters "ParameterKey=LambdaCodeBucket,ParameterValue=$ArtifactBucketName" "ParameterKey=LambdaCodeKey,ParameterValue=$objectKey" "ParameterKey=SessionSecretRevision,ParameterValue=$SessionSecretRevision" --tags $tags --capabilities CAPABILITY_IAM 2>&1
-        $updateExitCode = $LASTEXITCODE
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+
+        try {
+            $updateOutput = & aws cloudformation update-stack `
+                --stack-name $StackName `
+                --region $Region `
+                --template-body $templateUri `
+                --parameters `
+                    "ParameterKey=LambdaCodeBucket,ParameterValue=$ArtifactBucketName" `
+                    "ParameterKey=LambdaCodeKey,ParameterValue=$objectKey" `
+                    "ParameterKey=SessionSecretRevision,ParameterValue=$SessionSecretRevision" `
+                --tags $tags `
+                --capabilities CAPABILITY_IAM 2>&1
+
+            $updateExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousPreference
+        }
+
+        $updateMessage = $updateOutput -join "`n"
+
         if ($updateExitCode -eq 0) {
-            & aws cloudformation wait stack-update-complete --stack-name $StackName --region $Region
+            & aws cloudformation wait stack-update-complete `
+                --stack-name $StackName `
+                --region $Region
+
             $stackWaitSucceeded = $LASTEXITCODE -eq 0
-        } elseif (($updateOutput -join "`n") -match 'No updates are to be performed') {
+        }
+        elseif ($updateMessage -match 'No updates are to be performed') {
+            Write-Host 'CloudFormation stack is already up to date.'
             $stackWaitSucceeded = $true
-        } else {
+        }
+        else {
+            Write-Host $updateMessage
             throw 'CloudFormation did not accept the explicitly authorized stack update.'
         }
     }

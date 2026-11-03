@@ -262,12 +262,6 @@
           "ThrottlingBurstLimit": 40,
           "ThrottlingRateLimit": 20
         },
-        "RouteSettings": {
-          "POST /api/admin/login": {
-            "ThrottlingBurstLimit": 3,
-            "ThrottlingRateLimit": 1
-          }
-        },
         "Tags": { "Project": "CloudPoint" }
       }
     },

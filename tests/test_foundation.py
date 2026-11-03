@@ -314,6 +314,18 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(hash_password(password, bytes.fromhex(salt_hex)), encoded)
         self.assertNotEqual(hash_password("different-password", bytes.fromhex(salt_hex)), encoded)
 
+    def test_local_admin_password_reset_updates_only_hash_and_revokes_sessions(self):
+        self.repository.add_administrator("admin", hash_password("old-test-password"))
+        self.repository.create_admin_session("test-session-digest", "admin", 9_999_999_999)
+        self.repository.create_complaint("CP-abcdefghijklmnop", VALID_COMPLAINT)
+
+        replacement_hash = hash_password("new-test-password")
+        self.assertTrue(self.repository.reset_administrator_password("admin", replacement_hash))
+        self.assertEqual(self.repository.get_administrator("admin")["password_hash"], replacement_hash)
+        self.assertIsNone(self.repository.get_admin_session("test-session-digest"))
+        self.assertEqual(self.repository.dashboard_counts()["total"], 1)
+        self.assertFalse(self.repository.reset_administrator_password("missing", replacement_hash))
+
     @staticmethod
     def request(application, path, method="GET"):
         return FoundationTests.request_environ(application, {"REQUEST_METHOD": method, "PATH_INFO": path})

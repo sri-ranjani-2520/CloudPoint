@@ -44,10 +44,10 @@ The previous Phase 6 attempt used an outdated six-phase roadmap where Phase 6 me
 | Admin authentication and direct authorization | `tests/test_api.py`, `tests/test_dynamodb_repository.py` | Pass in local tests |
 | Admin filters, pagination, details, status/rejection updates, dashboard | `tests/test_api.py`, `tests/test_dynamodb_repository.py`, `tests/admin_ui.test.cjs` | Pass against SQLite and local DynamoDB/UI fakes |
 | Student/admin UI behavior | `tests/admin_ui.test.cjs` | Pass in fake DOM/API tests; not a real browser run |
-| API/config/deployment/cleanup documentation | `API_CONTRACTS.md`, `LOCAL_DEVELOPMENT.md`, deployment scripts | Documented and structurally tested; deployment scripts not executed |
-| Search/count and cost limitations | `API_CONTRACTS.md`, `LOCAL_DEVELOPMENT.md`, `README.md` | Documented; actual cost unverified |
+| API/config/deployment/cleanup documentation | `../../API_CONTRACTS.md`, `../../LOCAL_DEVELOPMENT.md`, deployment scripts | Documented and structurally tested; deployment scripts not executed |
+| Search/count and cost limitations | `../../API_CONTRACTS.md`, `../../LOCAL_DEVELOPMENT.md`, `../../README.md` | Documented; actual cost unverified |
 
-The former six-phase roadmap's deployed final-acceptance and billing criteria are not reassigned to Phase 7 or 8 here. Their owner-defined scopes have not been provided and remain pending in `README.md`.
+The former six-phase roadmap's deployed final-acceptance and billing criteria are not reassigned to Phase 7 or 8 here. Their owner-defined scopes have not been provided and remain pending in `../../README.md`.
 
 ## AWS-dependent verification still pending
 

@@ -76,8 +76,14 @@ function Get-CloudPointStack {
         [Parameter(Mandatory = $true)][string] $Region
     )
 
-    $result = & aws cloudformation describe-stacks --stack-name $StackName --region $Region --output json 2>&1
-    $exitCode = $LASTEXITCODE
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $result = & aws cloudformation describe-stacks --stack-name $StackName --region $Region --output json 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
     if ($exitCode -ne 0) {
         $message = $result -join "`n"
         if ($message -match 'ValidationError' -and $message -match 'does not exist') { return $null }

@@ -222,3 +222,12 @@ __marimo__/
 # CloudPoint local test database
 .test-cloudpoint.sqlite3
 .test-temp/
+
+# Local SQLite databases and sidecar files
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Temporary local Chrome profiles used for CloudPoint visual checks
+.cloudpoint-style-check-*/

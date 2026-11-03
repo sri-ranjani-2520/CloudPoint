@@ -15,7 +15,7 @@ This record follows the clarified eight-phase roadmap. Phase 7 is local implemen
 | Responsive layout and accessibility checks | Pass locally; assistive technology remains unverified | Real Chrome testing covered populated student/admin pages at 320px, 375px, 768px, and 1440px. HTML labels, feedback descriptions/live regions, focus styles, narrow-screen CSS, contained table scrolling, and reduced-motion rules are present and checked. Screen-reader and broader assistive-technology validation remain pending. |
 | IAM, authorization, CORS, limits, and sensitive-data review | Local review complete; AWS pending | Runtime policy and template checks are local; API authorization is behavior-tested. Deployment-role policy is not defined in the repository. Effective deployed IAM, HTTPS, CORS path, and throttling remain unverified. |
 | Backup, recovery, deployment, and rollback | Design documented; operationally incomplete | DynamoDB is retained on stack deletion, but point-in-time recovery/backups are not configured and no restore has been tested. RPO/RTO remain owner decisions. A paired immutable-release and maintenance-window rollback design, prerequisites, and cost categories are documented in `PHASE6_7_AUDIT_REMEDIATION.md`; no release bundle format, selector, rollback command, or rollback exercise exists. Deployment is guarded and cleanup is protected. |
-| Setup/deployment/configuration/limitations documentation | Pass locally | See `LOCAL_DEVELOPMENT.md`, `API_CONTRACTS.md`, README, and this record. Deployment instructions remain unexecuted. |
+| Setup/deployment/configuration/limitations documentation | Pass locally | See `../../LOCAL_DEVELOPMENT.md`, `../../API_CONTRACTS.md`, `../../README.md`, and this record. Deployment instructions remain unexecuted. |
 
 **Phase 7 status: partially complete.** Local essential workflow, previously recorded real Chrome checks, and code-level security checks pass. The targeted CSS remediation records layout containment for `.table-scroll`, a narrow-screen `min-width: 0` override for `.admin-page`, and a student header navigation wrap at narrow widths. Offline JSON/template and PowerShell syntax checks are available, but no CloudFormation validator is installed. The latest student header CSS change has not been rechecked in Chrome. The release/rollback and backup/recovery design is documented, but the exit criterion that the deployment can be operated and recovered is not met until account-specific operations, an implemented and exercised backup/restore and paired rollback, and broader screen-reader/assistive-technology validation are completed. This browser verification was local only; it was not AWS or production verification.
 
@@ -52,7 +52,7 @@ Local verification results:
 
 The Chrome screenshots and measured viewport results above are earlier local evidence. They do not cover the latest narrow-screen student header CSS change and should be repeated before treating responsive browser verification as current.
 
-Browser evidence: [phase7-admin-375.png](artifacts/phase7-admin-375.png)
+Browser evidence: [phase7-admin-375.png](../../artifacts/phase7-admin-375.png)
 
 This is local Chrome/browser evidence only. It does not verify AWS deployment, CloudFormation, IAM, CloudFront, backups, rollback, billing controls, screen-reader compatibility, or production behavior.
 

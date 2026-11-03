@@ -219,6 +219,20 @@ class Repository:
             ).fetchone()
         return dict(row) if row else None
 
+    def reset_administrator_password(self, username: str, password_hash: str) -> bool:
+        """Replace one SQLite administrator hash and revoke that account's sessions."""
+        username = _normalize_username(username)
+        if not is_password_hash(password_hash):
+            raise ValueError("Administrator password must be stored as a supported password hash")
+        with self._connection() as connection:
+            cursor = connection.execute(
+                "UPDATE administrators SET password_hash = ? WHERE username = ?",
+                (password_hash, username),
+            )
+            if cursor.rowcount:
+                connection.execute("DELETE FROM admin_sessions WHERE username = ?", (username,))
+        return cursor.rowcount == 1
+
     def create_admin_session(self, token_digest: str, username: str, expires_at: int) -> None:
         with self._connection() as connection:
             connection.execute(

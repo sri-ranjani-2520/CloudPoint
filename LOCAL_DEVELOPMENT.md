@@ -27,6 +27,22 @@ python -m tools.create_admin
 
 Use a unique strong password and do not put it in shell arguments, source files, `.env`, or logs. The tool stores only a salted scrypt hash. Local admin routes use 30-minute HMAC-signed bearer sessions; only a token digest is stored and logout revokes the session. The prototype lockout is per process and is not suitable as the only public deployment abuse control.
 
+### Temporary local demonstration administrator
+
+For an isolated local demonstration only, use the explicit reset command below. It is restricted to the SQLite `admin` account, requires typing a confirmation phrase, prompts for the password twice without echoing it, stores a fresh salted scrypt hash, and revokes existing sessions for that account. It never provisions an account automatically at application startup. `admin123` is a weak temporary demonstration password and must never be used in production or on a publicly reachable server. Prefer a strong password outside a controlled local demonstration.
+
+```powershell
+$env:CLOUDPOINT_DB_PATH = 'C:\Users\ram12\AppData\Local\Temp\cloudpoint-temp-admin-3a2de950ac6f8655b5a9b230.sqlite3'
+$env:CLOUDPOINT_PORT = '8001'
+python -m tools.create_admin --reset-local-demo-admin
+# Type: RESET LOCAL DEMO ADMIN
+# Username: admin
+# Enter and confirm the temporary password interactively.
+python -m cloudpoint.app
+```
+
+Keep the same `CLOUDPOINT_DB_PATH` in the same PowerShell session for provisioning and startup. The database path above is a local temporary example; do not use it if it is not the intended database for your machine. To replace the password, rerun the explicit reset and enter a stronger one. To remove this isolated demonstration environment, stop the local server and remove only that temporary database file after confirming it contains no data you need; do not remove or reset the normal project database.
+
 ## Implemented HTTP API
 
 - `GET /health` returns health status.
@@ -140,12 +156,12 @@ The infrastructure template defines alarms for Lambda errors, Lambda throttles, 
 
 ## Phase 7 release-readiness review
 
-The local Phase 7 acceptance record is in `PHASE7_ACCEPTANCE.md`. It documents which workflows use real local application code and SQLite, which repository/UI checks use fakes, and which browser and AWS checks remain pending. Student/admin control feedback is linked with `aria-describedby`, status feedback uses live regions, loading regions expose `aria-busy`, and the stylesheet includes narrow-screen layouts, visible focus, reduced-motion handling, and horizontal table scrolling. These code-level checks do not substitute for browser rendering, keyboard-only, screen-reader, or zoom testing.
+The Phase 6 acceptance record is in `docs/acceptance/PHASE6_ACCEPTANCE.md`. The local Phase 7 acceptance record is in `docs/acceptance/PHASE7_ACCEPTANCE.md`. It documents which workflows use real local application code and SQLite, which repository/UI checks use fakes, and which browser and AWS checks remain pending. Student/admin control feedback is linked with `aria-describedby`, status feedback uses live regions, loading regions expose `aria-busy`, and the stylesheet includes narrow-screen layouts, visible focus, reduced-motion handling, and horizontal table scrolling. These code-level checks do not substitute for browser rendering, keyboard-only, screen-reader, or zoom testing.
 
-The Phase 6–7 audit finding verification, recovery prerequisites, rollback limits, notification options, CloudFormation integration evidence, and target-account verification checklist are recorded in `PHASE6_7_AUDIT_REMEDIATION.md`. No browser, AWS CLI, SAM, or cfn-lint validator is available in the current environment. No deployment, validation API call, resource operation, or dependency installation was performed.
+The Phase 6–7 audit finding verification, recovery prerequisites, rollback limits, notification options, CloudFormation integration evidence, and target-account verification checklist are recorded in `docs/acceptance/PHASE6_7_AUDIT_REMEDIATION.md`. No browser, AWS CLI, SAM, or cfn-lint validator is available in the current environment. No deployment, validation API call, resource operation, or dependency installation was performed.
 
 ### Backup, recovery, and rollback limits
 
-The template retains the DynamoDB complaints table on stack deletion or replacement. Retention is not a backup. Point-in-time recovery and automated/on-demand backup resources are not configured; restore behavior and recovery objectives have not been tested. Before production use, approve a backup policy, configure the selected backup mechanism, and exercise restoration into an isolated table. The deployment scripts do not offer a supported previous-package rollback selector and do not provide an atomic backend-plus-frontend release. Preserve the exact prior template, Lambda package, frontend manifest, parameters, and versions; define and test the rollback procedure in an approved isolated environment before relying on recovery. Do not delete the retained table during testing. See `PHASE6_7_AUDIT_REMEDIATION.md` for specific prerequisites and the target-account checklist.
+The template retains the DynamoDB complaints table on stack deletion or replacement. Retention is not a backup. Point-in-time recovery and automated/on-demand backup resources are not configured; restore behavior and recovery objectives have not been tested. Before production use, approve a backup policy, configure the selected backup mechanism, and exercise restoration into an isolated table. The deployment scripts do not offer a supported previous-package rollback selector and do not provide an atomic backend-plus-frontend release. Preserve the exact prior template, Lambda package, frontend manifest, parameters, and versions; define and test the rollback procedure in an approved isolated environment before relying on recovery. Do not delete the retained table during testing. See `docs/acceptance/PHASE6_7_AUDIT_REMEDIATION.md` for specific prerequisites and the target-account checklist.
 
 Deployment and cleanup procedures remain unexecuted. Deployment checks the expected account, explicit region, artifact-bucket and stack ownership, and update opt-in; cleanup additionally requires two explicit approvals and completes inventory/retention checks before deletion. Cleanup keeps the DynamoDB table and artifact bucket; retained artifact ZIPs and Secrets Manager deletion recovery may continue to incur charges. The repository does not define a deployment IAM policy, so the operator's deployment identity needs a separate least-privilege review. The Lambda runtime policy is scoped in the template, but its effective deployed permissions are unverified.
